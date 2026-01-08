@@ -1,5 +1,5 @@
 // src/lib/api.ts
-const BASE_URL = "http://localhost:5000";
+const BASE_URL = "https://trackmykid-crm-production.up.railway.app";
 
 function buildQuery(params?: Record<string, any>) {
   if (!params) return "";

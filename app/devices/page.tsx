@@ -104,7 +104,7 @@ export default function DevicesPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("http://localhost:5000/api/devices", {
+      const res = await fetch("https://trackmykid-crm-production.up.railway.app/api/devices", {
         headers: { Authorization: `Bearer ${token}` },
       });
       if (!res.ok) throw new Error("Failed to fetch devices");

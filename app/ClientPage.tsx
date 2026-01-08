@@ -5,6 +5,7 @@ import { useState, useEffect } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { apiGet } from "@/lib/api";
 
+
 interface Counts {
   totalCustomers: number;
   totalDevices: number;
