@@ -7,8 +7,6 @@ import { api } from "@/lib/api";
 import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 import L from "leaflet";
-
-// ✅ New correct cluster library
 import MarkerClusterGroup from "@changey/react-leaflet-markercluster";
 import "@changey/react-leaflet-markercluster/dist/styles.min.css";
 
@@ -36,6 +34,23 @@ export default function TelemetryPage() {
   const [items, setItems] = useState<Tele[]>([]);
   const [loading, setLoading] = useState(false);
 
+  const [tokenChecked, setTokenChecked] = useState(false);
+  const [ready, setReady] = useState(false);
+
+  // ✅ Client-only token check
+  useEffect(() => {
+    if (typeof window === "undefined") return; // server guard
+    const token = localStorage.getItem("token") || sessionStorage.getItem("token");
+
+    if (!token) {
+      window.location.href = "/login"; // safe redirect
+    } else {
+      setReady(true);
+    }
+
+    setTokenChecked(true);
+  }, []);
+
   const fetchTelemetry = async () => {
     setLoading(true);
     try {
@@ -61,8 +76,8 @@ export default function TelemetryPage() {
   };
 
   useEffect(() => {
-    fetchTelemetry();
-  }, [page, query]);
+    if (ready) fetchTelemetry();
+  }, [page, query, ready]);
 
   const visible = useMemo(() => {
     if (!query) return items;
@@ -70,7 +85,6 @@ export default function TelemetryPage() {
     return items.filter((x) => (x.deviceId ?? "").toLowerCase().includes(q));
   }, [items, query]);
 
-  // Compute map center
   const center = useMemo(() => {
     const valid = visible.filter((x) => x.lat && x.lng);
     if (!valid.length) return [0, 0];
@@ -80,6 +94,9 @@ export default function TelemetryPage() {
 
     return [lat, lng];
   }, [visible]);
+
+  if (!tokenChecked) return <div>Checking authentication...</div>;
+  if (!ready) return <div>Redirecting to login...</div>;
 
   return (
     <Protected>
@@ -101,7 +118,6 @@ export default function TelemetryPage() {
           totalPages={totalPages}
         />
 
-        {/* Map with clustering */}
         <div className="h-96 w-full rounded shadow overflow-hidden">
           <MapContainer
             center={center as [number, number]}
@@ -113,8 +129,6 @@ export default function TelemetryPage() {
               attribution='&copy; <a href="https://www.openstreetmap.org/">OpenStreetMap</a> contributors'
               url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
             />
-
-            {/* ✅ Correct MarkerCluster */}
             <MarkerClusterGroup chunkedLoading>
               {visible.map(
                 (t) =>
@@ -132,7 +146,6 @@ export default function TelemetryPage() {
           </MapContainer>
         </div>
 
-        {/* Table */}
         <div className="bg-white dark:bg-gray-800 rounded shadow overflow-auto">
           <table className="min-w-full">
             <thead className="bg-gray-50 dark:bg-gray-700">
