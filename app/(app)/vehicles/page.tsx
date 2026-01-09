@@ -1,8 +1,8 @@
 "use client";
 import { useEffect, useMemo, useState } from "react";
-import TableControls from "../../src/components/TableControls";
-import { api } from "../../src/lib/api";
-import Protected from "../../src/components/Protected";
+import TableControls from "../../../src/components/TableControls";
+import { api } from "../../../src/lib/api";
+import Protected from "../../../src/components/Protected";
 
 type Vehicle = {
   id: number;
