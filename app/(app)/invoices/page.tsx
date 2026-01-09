@@ -6,23 +6,32 @@ import StatusBadge from "@/components/StatusBadge";
 import Protected from "@/components/Protected";
 import { api } from "@/lib/api";
 
-type Inv = {
+/* =======================
+   TYPES
+======================= */
+interface Invoice {
   id: number;
   number?: string;
   customer?: string;
   amount?: number;
   status?: string;
-};
+}
 
+/* =======================
+   COMPONENT
+======================= */
 export default function InvoicesPage() {
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [perPage] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
-  const [items, setItems] = useState<Inv[]>([]);
+
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
   const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState<Inv | null>(null);
+  const [editing, setEditing] = useState<Invoice | null>(null);
   const [form, setForm] = useState({
     number: "",
     customer: "",
@@ -30,35 +39,53 @@ export default function InvoicesPage() {
     status: "unpaid",
   });
 
+  /* =======================
+     FETCH INVOICES
+  ======================== */
   const fetchInvoices = async () => {
     setLoading(true);
+    setError(null);
     try {
-      const data = await api.get<{ data?: Inv[]; totalPages?: number }>(
+      const data = await api.get<{ data?: Invoice[]; totalPages?: number }>(
         `/api/invoices?q=${query || ""}&page=${page}&perPage=${perPage}`
       );
-
-      const invoices = data.data ?? (data as Inv[]);
-      setItems(invoices);
+      setInvoices(data.data ?? []);
       setTotalPages(data.totalPages ?? 1);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      setItems([]);
+      setInvoices([]);
       setTotalPages(1);
+      setError(err.message || "Failed to fetch invoices");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
     fetchInvoices();
   }, [page, query]);
 
+  /* =======================
+     FILTER INVOICES
+  ======================== */
+  const visibleInvoices = useMemo(() => {
+    if (!query) return invoices;
+    const q = query.toLowerCase();
+    return invoices.filter(
+      (i) => (i.number + " " + (i.customer ?? "")).toLowerCase().includes(q)
+    );
+  }, [invoices, query]);
+
+  /* =======================
+     CRUD HANDLERS
+  ======================== */
   const handleAdd = () => {
     setEditing(null);
     setForm({ number: "", customer: "", amount: 0, status: "unpaid" });
     setShowForm(true);
   };
 
-  const handleEdit = (inv: Inv) => {
+  const handleEdit = (inv: Invoice) => {
     setEditing(inv);
     setForm({
       number: inv.number ?? "",
@@ -69,17 +96,22 @@ export default function InvoicesPage() {
     setShowForm(true);
   };
 
-  const handleDelete = async (inv: Inv) => {
+  const handleDelete = async (inv: Invoice) => {
     if (!confirm(`Delete invoice #${inv.number}?`)) return;
-    await api.delete(`/api/invoices/${inv.id}`);
-    fetchInvoices();
+    try {
+      await api.delete(`/api/invoices/${inv.id}`);
+      fetchInvoices();
+    } catch {
+      alert("Delete failed");
+    }
   };
 
-  const submit = async (e: any) => {
+  const submitForm = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
       if (editing) await api.put(`/api/invoices/${editing.id}`, form);
       else await api.post("/api/invoices", form);
+
       setShowForm(false);
       fetchInvoices();
     } catch {
@@ -87,21 +119,17 @@ export default function InvoicesPage() {
     }
   };
 
-  const visible = useMemo(() => {
-    if (!query) return items;
-    const q = query.toLowerCase();
-    return items.filter(
-      (i) => (i.number + " " + (i.customer ?? "")).toLowerCase().includes(q)
-    );
-  }, [items, query]);
-
+  /* =======================
+     RENDER
+  ======================== */
   return (
     <Protected>
       <div className="space-y-6 p-4">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold">Invoices</h1>
+          <h1 className="text-2xl font-bold dark:text-gray-200">Invoices</h1>
         </div>
 
+        {/* Table Controls */}
         <TableControls
           title="Invoices"
           query={query}
@@ -115,42 +143,33 @@ export default function InvoicesPage() {
           totalPages={totalPages}
         />
 
-        {/* FORM */}
+        {/* Form */}
         {showForm && (
           <form
-            onSubmit={submit}
+            onSubmit={submitForm}
             className="bg-white dark:bg-gray-800 p-4 rounded shadow mb-4 grid grid-cols-1 md:grid-cols-4 gap-4"
           >
-            <input
-              value={form.number}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, number: e.target.value }))
-              }
-              placeholder="Invoice#"
-              className="px-3 py-2 border rounded w-full"
-            />
-            <input
-              value={form.customer}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, customer: e.target.value }))
-              }
-              placeholder="Customer"
-              className="px-3 py-2 border rounded w-full"
-            />
-            <input
-              value={form.amount}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, amount: Number(e.target.value) }))
-              }
-              placeholder="Amount"
-              type="number"
-              className="px-3 py-2 border rounded w-full"
-            />
+            {[
+              { label: "Invoice#", key: "number", type: "text" },
+              { label: "Customer", key: "customer", type: "text" },
+              { label: "Amount", key: "amount", type: "number" },
+            ].map(({ label, key, type }) => (
+              <input
+                key={key}
+                type={type}
+                placeholder={label}
+                value={(form as any)[key]}
+                onChange={(e) =>
+                  setForm({ ...form, [key]: type === "number" ? Number(e.target.value) : e.target.value })
+                }
+                className="px-3 py-2 border rounded w-full"
+                required
+              />
+            ))}
+
             <select
               value={form.status}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, status: e.target.value }))
-              }
+              onChange={(e) => setForm({ ...form, status: e.target.value })}
               className="px-3 py-2 border rounded w-full"
             >
               <option value="unpaid">Unpaid</option>
@@ -164,7 +183,7 @@ export default function InvoicesPage() {
               <button
                 type="button"
                 onClick={() => setShowForm(false)}
-                className="px-4 py-2 bg-gray-200 rounded"
+                className="px-4 py-2 bg-gray-200 dark:bg-gray-700 rounded"
               >
                 Cancel
               </button>
@@ -172,59 +191,57 @@ export default function InvoicesPage() {
           </form>
         )}
 
-        {/* TABLE */}
+        {/* Table */}
         <div className="bg-white dark:bg-gray-800 rounded shadow overflow-auto">
           <table className="min-w-full table-auto border-collapse">
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
-                {["#", "Invoice#", "Customer", "Amount", "Status", "Actions"].map(
-                  (h) => (
-                    <th
-                      key={h}
-                      className="px-4 py-3 text-left border-b dark:border-gray-600"
-                    >
-                      {h}
-                    </th>
-                  )
-                )}
+                {["#", "Invoice#", "Customer", "Amount", "Status", "Actions"].map((h) => (
+                  <th
+                    key={h}
+                    className="px-4 py-3 text-left border-b dark:border-gray-600"
+                  >
+                    {h}
+                  </th>
+                ))}
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={6} className="p-6 text-center">
+                  <td colSpan={6} className="p-6 text-center text-gray-500 dark:text-gray-400">
                     Loading...
                   </td>
                 </tr>
-              ) : visible.length ? (
-                visible.map((i) => (
+              ) : visibleInvoices.length ? (
+                visibleInvoices.map((inv) => (
                   <tr
-                    key={i.id}
+                    key={inv.id}
                     className="hover:bg-gray-50 dark:hover:bg-gray-700 border-b"
                   >
-                    <td className="px-4 py-3">{i.id}</td>
-                    <td className="px-4 py-3">{i.number}</td>
-                    <td className="px-4 py-3">{i.customer}</td>
-                    <td className="px-4 py-3">{i.amount}</td>
+                    <td className="px-4 py-3">{inv.id}</td>
+                    <td className="px-4 py-3">{inv.number}</td>
+                    <td className="px-4 py-3">{inv.customer}</td>
+                    <td className="px-4 py-3">{inv.amount}</td>
                     <td className="px-4 py-3">
-                      <StatusBadge status={i.status ?? "unpaid"} />
+                      <StatusBadge status={inv.status ?? "unpaid"} />
                     </td>
                     <td className="px-4 py-3 flex gap-2">
                       <button
-                        onClick={() => handleEdit(i)}
+                        onClick={() => handleEdit(inv)}
                         className="px-2 py-1 bg-yellow-400 rounded hover:bg-yellow-500"
                       >
                         Edit
                       </button>
                       <button
-                        onClick={() => handleDelete(i)}
+                        onClick={() => handleDelete(inv)}
                         className="px-2 py-1 bg-red-500 text-white rounded hover:bg-red-600"
                       >
                         Delete
                       </button>
                       <button
-                        onClick={() => alert(JSON.stringify(i, null, 2))}
-                        className="px-2 py-1 bg-gray-200 rounded hover:bg-gray-300"
+                        onClick={() => alert(JSON.stringify(inv, null, 2))}
+                        className="px-2 py-1 bg-gray-200 dark:bg-gray-700 rounded hover:bg-gray-300"
                       >
                         View
                       </button>
@@ -233,11 +250,8 @@ export default function InvoicesPage() {
                 ))
               ) : (
                 <tr>
-                  <td
-                    colSpan={6}
-                    className="p-6 text-center text-gray-500 dark:text-gray-400"
-                  >
-                    No invoices
+                  <td colSpan={6} className="p-6 text-center text-gray-500 dark:text-gray-400">
+                    {error ? error : "No invoices found"}
                   </td>
                 </tr>
               )}

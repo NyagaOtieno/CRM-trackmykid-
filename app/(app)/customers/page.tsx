@@ -17,12 +17,14 @@ type Customer = {
   status?: string;
 };
 
+// Safe string conversion
 const safeString = (v: any) => {
   if (v === null || v === undefined) return "";
   if (typeof v === "string" || typeof v === "number") return String(v);
   return JSON.stringify(v);
 };
 
+// Normalize API response
 const normalizeCustomer = (c: any): Customer => ({
   id: c.id,
   name: safeString(c.name),
@@ -33,7 +35,18 @@ const normalizeCustomer = (c: any): Customer => ({
   status: safeString(c.status) || "active",
 });
 
+// Safe wrappers for browser alerts
+const safeAlert = (msg: string) => {
+  if (typeof window !== "undefined") alert(msg);
+};
+
+const safeConfirm = (msg: string) => {
+  if (typeof window !== "undefined") return confirm(msg);
+  return false;
+};
+
 export default function CustomersPage() {
+  const [ready, setReady] = useState(false);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
   const [perPage] = useState(10);
@@ -52,6 +65,7 @@ export default function CustomersPage() {
     status: "active",
   });
 
+  // Fetch customers
   const fetchCustomers = async () => {
     setLoading(true);
     try {
@@ -70,9 +84,14 @@ export default function CustomersPage() {
     } catch (err) {
       console.error("Error fetching customers:", err);
       setCustomers([]);
+      setTotalPages(1);
     }
     setLoading(false);
   };
+
+  useEffect(() => {
+    setReady(true); // prevent prerender issues
+  }, []);
 
   useEffect(() => {
     fetchCustomers();
@@ -105,7 +124,7 @@ export default function CustomersPage() {
   };
 
   const handleDelete = async (c: Customer) => {
-    if (!confirm(`Delete ${c.name}?`)) return;
+    if (!safeConfirm(`Delete ${c.name}?`)) return;
     await apiDelete(`/api/customers/${c.id}`);
     fetchCustomers();
   };
@@ -118,19 +137,33 @@ export default function CustomersPage() {
       setShowForm(false);
       fetchCustomers();
     } catch {
-      alert("Save failed");
+      safeAlert("Save failed");
     }
   };
 
+  // Filtered list for search
   const visible = useMemo(() => {
     if (!query) return customers;
     const q = query.toLowerCase();
     return customers.filter((c) =>
-      (c.name + " " + c.contactPerson + " " + c.email + " " + c.phone + " " + c.address)
+      (
+        c.name +
+        " " +
+        c.contactPerson +
+        " " +
+        c.email +
+        " " +
+        c.phone +
+        " " +
+        c.address
+      )
         .toLowerCase()
         .includes(q)
     );
   }, [customers, query]);
+
+  // Avoid rendering until ready
+  if (!ready) return <div className="p-6 text-center">Loading page...</div>;
 
   return (
     <Protected>
@@ -171,7 +204,9 @@ export default function CustomersPage() {
 
               <input
                 value={form.contactPerson}
-                onChange={(e) => setForm((f) => ({ ...f, contactPerson: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, contactPerson: e.target.value }))
+                }
                 placeholder="Contact Person"
                 className="px-3 py-2 border rounded w-full dark:bg-gray-700 dark:text-white"
               />
@@ -280,7 +315,7 @@ export default function CustomersPage() {
                         Delete
                       </button>
                       <button
-                        onClick={() => alert(JSON.stringify(c, null, 2))}
+                        onClick={() => safeAlert(JSON.stringify(c, null, 2))}
                         className="px-3 py-1 text-sm bg-gray-300 dark:bg-gray-700 dark:text-white rounded"
                       >
                         View

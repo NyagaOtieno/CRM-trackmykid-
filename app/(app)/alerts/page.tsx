@@ -6,11 +6,10 @@ import StatusBadge from "@/components/StatusBadge";
 import Protected from "@/components/Protected";
 import { apiGet, apiDelete } from "@/lib/api";
 
-// Renamed to avoid conflict with window.alert()
 type AlertItem = {
   id: number;
   message: string;
-  level?: string;       // this will be used as status
+  level?: string; // this will be used as status
   createdAt?: string;
 };
 
@@ -21,6 +20,22 @@ export default function AlertsPage() {
   const [totalPages, setTotalPages] = useState(1);
   const [items, setItems] = useState<AlertItem[]>([]);
   const [loading, setLoading] = useState(false);
+
+  const [tokenChecked, setTokenChecked] = useState(false);
+  const [ready, setReady] = useState(false);
+
+  // ✅ Client-only token check
+  useEffect(() => {
+    if (typeof window === "undefined") return; // server guard
+    const token = localStorage.getItem("token") || sessionStorage.getItem("token");
+
+    if (!token) {
+      window.location.href = "/login";
+    } else {
+      setReady(true);
+    }
+    setTokenChecked(true);
+  }, []);
 
   const fetchAlerts = async () => {
     setLoading(true);
@@ -43,10 +58,11 @@ export default function AlertsPage() {
   };
 
   useEffect(() => {
-    fetchAlerts();
-  }, [page, query]);
+    if (ready) fetchAlerts();
+  }, [page, query, ready]);
 
   const handleDelete = async (alertItem: AlertItem) => {
+    if (typeof window === "undefined") return; // SSR guard
     if (!window.confirm(`Delete alert #${alertItem.id}?`)) return;
 
     await apiDelete(`/api/alerts/${alertItem.id}`);
@@ -55,13 +71,14 @@ export default function AlertsPage() {
 
   const filtered = useMemo(() => {
     if (!query) return items;
-
     const q = query.toLowerCase();
-
     return items.filter((x) =>
       `${x.message} ${x.level || ""}`.toLowerCase().includes(q)
     );
   }, [items, query]);
+
+  if (!tokenChecked) return <div>Checking authentication...</div>;
+  if (!ready) return <div>Redirecting to login...</div>;
 
   return (
     <Protected>
@@ -115,6 +132,7 @@ export default function AlertsPage() {
                     <td className="px-4 py-3 flex gap-2">
                       <button
                         onClick={() =>
+                          typeof window !== "undefined" &&
                           window.alert(JSON.stringify(row, null, 2))
                         }
                         className="px-3 py-1 bg-gray-200 dark:bg-gray-700 rounded"

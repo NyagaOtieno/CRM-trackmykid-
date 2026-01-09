@@ -1,10 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, ChangeEvent, FormEvent } from "react";
 import { getToken } from "@/lib/auth";
 
 /* =======================
-   TYPES (MATCH BACKEND)
+   TYPES
 ======================= */
 
 interface Vehicle {
@@ -45,19 +45,26 @@ interface Device {
   serialNumber: string | null;
   type: string | null;
   assignedTo: string | null;
-
   vehicleId: number;
   installedById: number;
-
   createdAt: string;
   updatedAt: string;
-
-  /* relations */
   vehicle?: Vehicle;
   installedBy?: User;
   jobs?: Job[];
   subscriptions?: Subscription[];
 }
+
+/* =======================
+   UTILS
+======================= */
+
+const safeAlert = (msg: string) => typeof window !== "undefined" && alert(msg);
+const safeConfirm = (msg: string) =>
+  typeof window !== "undefined" ? confirm(msg) : false;
+
+const formatDate = (dateStr: string) =>
+  new Date(dateStr).toLocaleDateString();
 
 /* =======================
    COMPONENT
@@ -92,33 +99,49 @@ export default function DevicesPage() {
     setToken(getToken());
   }, []);
 
-  useEffect(() => {
-    if (token) fetchDevices();
-  }, [token]);
-
   /* =======================
-     FETCH
+     API HELPERS
   ======================= */
+
+  const apiRequest = async (url: string, method = "GET", body?: any) => {
+    if (!token) throw new Error("No token");
+    const res = await fetch(url, {
+      method,
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) throw new Error(`Request failed: ${res.status}`);
+    return res.json();
+  };
 
   const fetchDevices = async () => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch("https://trackmykid-crm-production.up.railway.app/api/devices", {
-        headers: { Authorization: `Bearer ${token}` },
-      });
-      if (!res.ok) throw new Error("Failed to fetch devices");
-      const data: Device[] = await res.json();
+      const data: Device[] = await apiRequest(
+        "https://trackmykid-crm-production.up.railway.app/api/devices"
+      );
       setDevices(data);
     } catch (err: any) {
-      setError(err.message || "Something went wrong");
+      setError(err.message || "Failed to fetch devices");
     } finally {
       setLoading(false);
     }
   };
 
   /* =======================
-     CRUD
+     EFFECTS
+  ======================= */
+
+  useEffect(() => {
+    if (token) fetchDevices();
+  }, [token]);
+
+  /* =======================
+     CRUD HANDLERS
   ======================= */
 
   const handleEdit = (device: Device) => {
@@ -138,47 +161,32 @@ export default function DevicesPage() {
   };
 
   const handleDelete = async (device: Device) => {
-    if (!confirm(`Delete device ${device.imei}?`)) return;
+    if (!safeConfirm(`Delete device ${device.imei}?`)) return;
     try {
-      const res = await fetch(
-        `http://localhost:5000/api/devices/${device.id}`,
-        {
-          method: "DELETE",
-          headers: { Authorization: `Bearer ${token}` },
-        }
+      await apiRequest(
+        `https://trackmykid-crm-production.up.railway.app/api/devices/${device.id}`,
+        "DELETE"
       );
-      if (!res.ok) throw new Error("Failed to delete device");
       fetchDevices();
     } catch (err: any) {
-      alert(err.message || "Delete failed");
+      safeAlert(err.message || "Delete failed");
     }
   };
 
-  const submitForm = async (e: any) => {
+  const submitForm = async (e: FormEvent) => {
     e.preventDefault();
-
-    const payload = {
-      ...form,
-      vehicleId: Number(form.vehicleId),
-      installedById: Number(form.installedById),
-    };
-
     try {
-      const method = editing ? "PUT" : "POST";
+      const payload = {
+        ...form,
+        vehicleId: Number(form.vehicleId),
+        installedById: Number(form.installedById),
+      };
+
       const url = editing
-        ? `http://localhost:5000/api/devices/${editing.id}`
-        : "http://localhost:5000/api/devices";
+        ? `https://trackmykid-crm-production.up.railway.app/api/devices/${editing.id}`
+        : "https://trackmykid-crm-production.up.railway.app/api/devices";
 
-      const res = await fetch(url, {
-        method,
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(payload),
-      });
-
-      if (!res.ok) throw new Error("Save failed");
+      await apiRequest(url, editing ? "PUT" : "POST", payload);
 
       setShowForm(false);
       setEditing(null);
@@ -196,20 +204,21 @@ export default function DevicesPage() {
 
       fetchDevices();
     } catch (err: any) {
-      alert(err.message || "Save failed");
+      safeAlert(err.message || "Save failed");
     }
   };
 
-  const formatDate = (dateStr: string) =>
-    new Date(dateStr).toLocaleDateString();
-
-  if (token === null) {
-    return <p className="p-6 text-gray-500">Loading authentication...</p>;
-  }
+  const handleChange = (
+    e: ChangeEvent<HTMLInputElement | HTMLSelectElement>
+  ) => {
+    setForm({ ...form, [e.target.name]: e.target.value });
+  };
 
   /* =======================
-     UI
+     RENDER
   ======================= */
+
+  if (!token) return <p className="p-6 text-gray-500">Loading authentication...</p>;
 
   return (
     <div className="p-6 space-y-6">
@@ -229,66 +238,60 @@ export default function DevicesPage() {
       {showForm && (
         <form
           onSubmit={submitForm}
-          className="p-6 bg-white dark:bg-gray-800 rounded shadow"
+          className="p-6 bg-white dark:bg-gray-800 rounded shadow space-y-4"
         >
-          <h2 className="text-xl font-semibold mb-4">
+          <h2 className="text-xl font-semibold">
             {editing ? "Edit Device" : "Add Device"}
           </h2>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {[
-              ["IMEI", "imei"],
-              ["SIM Number", "simNumber"],
-              ["Firmware Version", "firmwareVersion"],
-              ["Serial Number", "serialNumber"],
-              ["Type", "type"],
-              ["Assigned To", "assignedTo"],
-            ].map(([label, key]) => (
+              { label: "IMEI", name: "imei" },
+              { label: "SIM Number", name: "simNumber" },
+              { label: "Firmware Version", name: "firmwareVersion" },
+              { label: "Serial Number", name: "serialNumber" },
+              { label: "Type", name: "type" },
+              { label: "Assigned To", name: "assignedTo" },
+            ].map(({ label, name }) => (
               <input
-                key={key}
+                key={name}
+                name={name}
                 placeholder={label}
-                value={(form as any)[key]}
-                onChange={(e) =>
-                  setForm({ ...form, [key]: e.target.value })
-                }
+                value={(form as any)[name]}
+                onChange={handleChange}
                 className="px-3 py-2 border rounded"
               />
             ))}
 
             <input
               type="date"
+              name="installationDate"
               value={form.installationDate}
-              onChange={(e) =>
-                setForm({ ...form, installationDate: e.target.value })
-              }
+              onChange={handleChange}
               className="px-3 py-2 border rounded"
             />
 
             <input
               type="number"
+              name="vehicleId"
               placeholder="Vehicle ID"
               value={form.vehicleId}
-              onChange={(e) =>
-                setForm({ ...form, vehicleId: e.target.value })
-              }
+              onChange={handleChange}
               className="px-3 py-2 border rounded"
             />
 
             <input
               type="number"
+              name="installedById"
               placeholder="Installed By ID"
               value={form.installedById}
-              onChange={(e) =>
-                setForm({ ...form, installedById: e.target.value })
-              }
+              onChange={handleChange}
               className="px-3 py-2 border rounded"
             />
           </div>
 
-          <div className="mt-4 flex gap-2">
-            <button className="px-4 py-2 bg-blue-600 text-white rounded">
-              Save
-            </button>
+          <div className="flex gap-2">
+            <button className="px-4 py-2 bg-blue-600 text-white rounded">Save</button>
             <button
               type="button"
               onClick={() => setShowForm(false)}
@@ -333,18 +336,10 @@ export default function DevicesPage() {
                       ? `${d.vehicle.registrationNo} (${d.vehicle.make})`
                       : d.vehicleId}
                   </td>
-                  <td className="px-4 py-3">
-                    {d.installedBy?.name || d.installedById}
-                  </td>
-                  <td className="px-4 py-3">
-                    {d.jobs?.map((j) => j.jobType).join(", ") || "-"}
-                  </td>
-                  <td className="px-4 py-3">
-                    {d.subscriptions?.length || 0}
-                  </td>
-                  <td className="px-4 py-3">
-                    {formatDate(d.createdAt)}
-                  </td>
+                  <td className="px-4 py-3">{d.installedBy?.name || d.installedById}</td>
+                  <td className="px-4 py-3">{d.jobs?.map((j) => j.jobType).join(", ") || "-"}</td>
+                  <td className="px-4 py-3">{d.subscriptions?.length || 0}</td>
+                  <td className="px-4 py-3">{formatDate(d.createdAt)}</td>
                   <td className="px-4 py-3 flex gap-2">
                     <button
                       onClick={() => handleEdit(d)}
@@ -364,7 +359,7 @@ export default function DevicesPage() {
             ) : (
               <tr>
                 <td colSpan={8} className="p-6 text-center text-gray-500">
-                  No devices found
+                  {loading ? "Loading..." : "No devices found"}
                 </td>
               </tr>
             )}
@@ -372,7 +367,6 @@ export default function DevicesPage() {
         </table>
       </div>
 
-      {loading && <p>Loading...</p>}
       {error && <p className="text-red-500">{error}</p>}
     </div>
   );

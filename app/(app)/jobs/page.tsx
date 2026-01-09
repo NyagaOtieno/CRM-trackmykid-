@@ -8,7 +8,7 @@ import { api } from "@/lib/api";
 
 /* ================= TYPES ================= */
 
-type Job = {
+interface Job {
   id: number;
   jobType: string;
   notes?: string;
@@ -24,7 +24,8 @@ type Job = {
   device?: { imei: string };
   vehicle?: { registrationNo: string };
   assignedTo?: { name: string };
-};
+  status?: string;
+}
 
 /* ================= PAGE ================= */
 
@@ -36,21 +37,22 @@ export default function JobsPage() {
 
   const [jobs, setJobs] = useState<Job[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   /* ================= FETCH ================= */
-
   const fetchJobs = async () => {
     setLoading(true);
+    setError(null);
     try {
-      // 🔥 BACKEND RETURNS Job[]
       const list = await api.get<Job[]>("/api/jobs");
-
-      setJobs(Array.isArray(list) ? list : []);
-      setTotalPages(Math.ceil((list?.length ?? 1) / perPage));
-    } catch (err) {
+      const array = Array.isArray(list) ? list : [];
+      setJobs(array);
+      setTotalPages(Math.ceil(array.length / perPage));
+    } catch (err: any) {
       console.error("Failed to fetch jobs:", err);
       setJobs([]);
       setTotalPages(1);
+      setError(err.message || "Failed to fetch jobs");
     } finally {
       setLoading(false);
     }
@@ -61,8 +63,7 @@ export default function JobsPage() {
   }, []);
 
   /* ================= FILTER ================= */
-
-  const visible = useMemo(() => {
+  const visibleJobs = useMemo(() => {
     if (!query) return jobs;
     const q = query.toLowerCase();
     return jobs.filter(
@@ -76,12 +77,26 @@ export default function JobsPage() {
   const formatDate = (iso?: string) =>
     iso ? new Date(iso).toLocaleString() : "-";
 
-  /* ================= UI ================= */
+  /* ================= TABLE COLUMNS ================= */
+  const columns = [
+    { label: "ID", accessor: (j: Job) => j.id },
+    { label: "Job Type", accessor: (j: Job) => j.jobType },
+    { label: "Customer", accessor: (j: Job) => j.customer?.name ?? "-" },
+    { label: "Vehicle", accessor: (j: Job) => j.vehicle?.registrationNo ?? "-" },
+    { label: "Device", accessor: (j: Job) => j.device?.imei ?? "-" },
+    { label: "Scheduled", accessor: (j: Job) => formatDate(j.scheduledAt) },
+    { label: "Assigned To", accessor: (j: Job) => j.assignedTo?.name ?? "-" },
+    {
+      label: "Status",
+      accessor: (j: Job) => <StatusBadge status={j.status ?? "open"} />,
+    },
+  ];
 
+  /* ================= UI ================= */
   return (
     <Protected>
       <div className="space-y-4 p-4">
-        <h1 className="text-2xl font-bold">Jobs</h1>
+        <h1 className="text-2xl font-bold dark:text-gray-200">Jobs</h1>
 
         <TableControls
           title="Jobs"
@@ -99,59 +114,41 @@ export default function JobsPage() {
           <table className="min-w-full border-collapse">
             <thead className="bg-gray-50 dark:bg-gray-700">
               <tr>
-                <th className="px-4 py-3 text-left">ID</th>
-                <th className="px-4 py-3 text-left">Job Type</th>
-                <th className="px-4 py-3 text-left">Customer</th>
-                <th className="px-4 py-3 text-left">Vehicle</th>
-                <th className="px-4 py-3 text-left">Device</th>
-                <th className="px-4 py-3 text-left">Scheduled</th>
-                <th className="px-4 py-3 text-left">Assigned To</th>
-                <th className="px-4 py-3 text-left">Status</th>
+                {columns.map((col) => (
+                  <th
+                    key={col.label}
+                    className="px-4 py-3 text-left border-b dark:border-gray-600"
+                  >
+                    {col.label}
+                  </th>
+                ))}
               </tr>
             </thead>
 
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="p-6 text-center">
+                  <td colSpan={columns.length} className="p-6 text-center text-gray-500 dark:text-gray-400">
                     Loading...
                   </td>
                 </tr>
-              ) : visible.length ? (
-                visible.map((j) => (
+              ) : visibleJobs.length ? (
+                visibleJobs.map((job) => (
                   <tr
-                    key={j.id}
-                    className="border-t hover:bg-gray-50 dark:hover:bg-gray-700"
+                    key={job.id}
+                    className="border-t hover:bg-gray-50 dark:hover:bg-gray-700 transition"
                   >
-                    <td className="px-4 py-3">{j.id}</td>
-                    <td className="px-4 py-3">{j.jobType}</td>
-                    <td className="px-4 py-3">
-                      {j.customer?.name ?? "-"}
-                    </td>
-                    <td className="px-4 py-3">
-                      {j.vehicle?.registrationNo ?? "-"}
-                    </td>
-                    <td className="px-4 py-3">
-                      {j.device?.imei ?? "-"}
-                    </td>
-                    <td className="px-4 py-3">
-                      {formatDate(j.scheduledAt)}
-                    </td>
-                    <td className="px-4 py-3">
-                      {j.assignedTo?.name ?? "-"}
-                    </td>
-                    <td className="px-4 py-3">
-                      <StatusBadge status="open" />
-                    </td>
+                    {columns.map((col) => (
+                      <td key={col.label} className="px-4 py-3 border-b dark:border-gray-700">
+                        {col.accessor(job)}
+                      </td>
+                    ))}
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td
-                    colSpan={8}
-                    className="p-6 text-center text-gray-500"
-                  >
-                    No jobs found.
+                  <td colSpan={columns.length} className="p-6 text-center text-gray-500 dark:text-gray-400">
+                    {error ?? "No jobs found."}
                   </td>
                 </tr>
               )}
