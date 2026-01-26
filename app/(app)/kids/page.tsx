@@ -13,6 +13,17 @@ interface Kid {
   age?: number;
 }
 
+// Supports either: Kid[]  OR  { data: Kid[], total/totalPages... }
+type KidsApiResponse =
+  | Kid[]
+  | {
+      data: Kid[];
+      total?: number;
+      page?: number;
+      perPage?: number;
+      totalPages?: number;
+    };
+
 /* ================= PAGE ================= */
 export default function KidsPage() {
   const [query, setQuery] = useState("");
@@ -24,25 +35,49 @@ export default function KidsPage() {
   const [loading, setLoading] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Kid | null>(null);
-  const [form, setForm] = useState({ name: "", parentId: 0, age: 0 });
+
+  // ✅ Form matches the exact backend body:
+  // { "name": "Jane Doe", "age": 10, "parentId": 3 }
+  const [form, setForm] = useState<{ name: string; age: number; parentId: number }>({
+    name: "",
+    age: 0,
+    parentId: 0,
+  });
+
   const [error, setError] = useState<string | null>(null);
 
   /* ================= FETCH ================= */
   const fetchKids = async () => {
     setLoading(true);
     setError(null);
+
     try {
-      const list = await api.get<Kid[]>(
-        `/api/kids?q=${query || ""}&page=${page}&perPage=${perPage}`
+      const res = await api.get<KidsApiResponse>(
+        `/api/kids?q=${encodeURIComponent(query || "")}&page=${page}&perPage=${perPage}`
       );
-      const array = Array.isArray(list) ? list : [];
-      setKids(array);
-      setTotalPages(Math.max(Math.ceil(array.length / perPage), 1));
+
+      // A) Array response
+      if (Array.isArray(res)) {
+        setKids(res);
+        setTotalPages(Math.max(Math.ceil(res.length / perPage), 1));
+        return;
+      }
+
+      // B) Paginated object response
+      const data = Array.isArray(res?.data) ? res.data : [];
+      setKids(data);
+
+      if (typeof res?.totalPages === "number") {
+        setTotalPages(Math.max(res.totalPages, 1));
+      } else {
+        const total = typeof res?.total === "number" ? res.total : data.length;
+        setTotalPages(Math.max(Math.ceil(total / perPage), 1));
+      }
     } catch (err: any) {
       console.error(err);
       setKids([]);
       setTotalPages(1);
-      setError(err.message || "Failed to fetch kids");
+      setError(err?.message || "Failed to fetch kids");
     } finally {
       setLoading(false);
     }
@@ -50,18 +85,23 @@ export default function KidsPage() {
 
   useEffect(() => {
     fetchKids();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [page, query]);
 
   /* ================= FORM HANDLERS ================= */
   const handleAdd = () => {
     setEditing(null);
-    setForm({ name: "", parentId: 0, age: 0 });
+    setForm({ name: "", age: 0, parentId: 0 }); // ✅ exact body fields
     setShowForm(true);
   };
 
   const handleEdit = (k: Kid) => {
     setEditing(k);
-    setForm({ name: k.name, parentId: k.parentId, age: k.age ?? 0 });
+    setForm({
+      name: k.name ?? "",
+      age: Number(k.age ?? 0),
+      parentId: Number(k.parentId ?? 0),
+    });
     setShowForm(true);
   };
 
@@ -70,20 +110,36 @@ export default function KidsPage() {
     try {
       await api.delete(`/api/kids/${k.id}`);
       fetchKids();
-    } catch {
-      alert("Delete failed");
+    } catch (err: any) {
+      console.error(err);
+      alert(err?.message || "Delete failed");
     }
   };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+
+    // ✅ payload EXACTLY as backend expects
+    const payload = {
+      name: String(form.name || "").trim(),
+      age: Number(form.age),
+      parentId: Number(form.parentId),
+    };
+
+    // Optional small validation
+    if (!payload.name) return alert("Name is required");
+    if (!Number.isFinite(payload.parentId) || payload.parentId <= 0)
+      return alert("Parent ID must be a valid number");
+
     try {
-      if (editing) await api.put(`/api/kids/${editing.id}`, form);
-      else await api.post("/api/kids", form);
+      if (editing) await api.put(`/api/kids/${editing.id}`, payload);
+      else await api.post("/api/kids", payload);
+
       setShowForm(false);
       fetchKids();
-    } catch {
-      alert("Save failed");
+    } catch (err: any) {
+      console.error(err);
+      alert(err?.message || "Save failed");
     }
   };
 
@@ -91,9 +147,7 @@ export default function KidsPage() {
   const visible = useMemo(() => {
     if (!query) return kids;
     const q = query.toLowerCase();
-    return kids.filter((k) =>
-      (k.name + " " + k.parentId).toLowerCase().includes(q)
-    );
+    return kids.filter((k) => (k.name + " " + k.parentId).toLowerCase().includes(q));
   }, [kids, query]);
 
   /* ================= TABLE COLUMNS ================= */
@@ -126,9 +180,10 @@ export default function KidsPage() {
   /* ================= UI ================= */
   return (
     <Protected>
-      <div className="space-y-4 p-4">
+      {/* ✅ Removed all dark background classes */}
+      <div className="space-y-4 p-4 bg-white min-h-screen">
         <div className="flex items-center justify-between">
-          <h1 className="text-2xl font-bold dark:text-gray-200">Kids</h1>
+          <h1 className="text-2xl font-bold text-gray-900">Kids</h1>
         </div>
 
         <TableControls
@@ -148,17 +203,25 @@ export default function KidsPage() {
         {showForm && (
           <form
             onSubmit={submit}
-            className="bg-white dark:bg-gray-800 p-4 rounded shadow mb-4 grid grid-cols-1 md:grid-cols-3 gap-3"
+            className="bg-white p-4 rounded shadow mb-4 grid grid-cols-1 md:grid-cols-3 gap-3"
           >
             <input
               required
               value={form.name}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, name: e.target.value }))
-              }
+              onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
               placeholder="Name"
               className="px-3 py-2 border rounded w-full"
             />
+
+            <input
+              required
+              type="number"
+              value={form.age}
+              onChange={(e) => setForm((f) => ({ ...f, age: Number(e.target.value) }))}
+              placeholder="Age"
+              className="px-3 py-2 border rounded w-full"
+            />
+
             <input
               required
               type="number"
@@ -169,15 +232,7 @@ export default function KidsPage() {
               placeholder="Parent ID"
               className="px-3 py-2 border rounded w-full"
             />
-            <input
-              type="number"
-              value={form.age}
-              onChange={(e) =>
-                setForm((f) => ({ ...f, age: Number(e.target.value) }))
-              }
-              placeholder="Age"
-              className="px-3 py-2 border rounded w-full"
-            />
+
             <div className="md:col-span-3 flex gap-2 justify-end">
               <button className="px-4 py-2 bg-green-600 text-white rounded hover:bg-green-700">
                 Save
@@ -194,41 +249,30 @@ export default function KidsPage() {
         )}
 
         {/* TABLE */}
-        <div className="bg-white dark:bg-gray-800 rounded shadow overflow-auto">
+        <div className="bg-white rounded shadow overflow-auto">
           <table className="min-w-full border-collapse">
-            <thead className="bg-gray-50 dark:bg-gray-700">
+            <thead className="bg-gray-50">
               <tr>
                 {columns.map((col) => (
-                  <th
-                    key={col.label}
-                    className="px-4 py-3 text-left border-b dark:border-gray-600"
-                  >
+                  <th key={col.label} className="px-4 py-3 text-left border-b">
                     {col.label}
                   </th>
                 ))}
               </tr>
             </thead>
+
             <tbody>
               {loading ? (
                 <tr>
-                  <td
-                    colSpan={columns.length}
-                    className="p-6 text-center text-gray-500 dark:text-gray-400"
-                  >
+                  <td colSpan={columns.length} className="p-6 text-center text-gray-500">
                     Loading...
                   </td>
                 </tr>
               ) : visible.length ? (
                 visible.map((k) => (
-                  <tr
-                    key={k.id}
-                    className="border-t hover:bg-gray-50 dark:hover:bg-gray-700 transition"
-                  >
+                  <tr key={k.id} className="border-t hover:bg-gray-50 transition">
                     {columns.map((col) => (
-                      <td
-                        key={col.label}
-                        className="px-4 py-3 border-b dark:border-gray-700"
-                      >
+                      <td key={col.label} className="px-4 py-3 border-b">
                         {col.accessor(k)}
                       </td>
                     ))}
@@ -236,10 +280,7 @@ export default function KidsPage() {
                 ))
               ) : (
                 <tr>
-                  <td
-                    colSpan={columns.length}
-                    className="p-6 text-center text-gray-500 dark:text-gray-400"
-                  >
+                  <td colSpan={columns.length} className="p-6 text-center text-gray-500">
                     {error ?? "No kids found."}
                   </td>
                 </tr>

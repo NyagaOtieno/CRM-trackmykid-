@@ -7,35 +7,51 @@ import StatusBadge from "@/components/StatusBadge";
 import Protected from "@/components/Protected";
 import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 
+/**
+ * Customer type
+ */
 type Customer = {
-  id: number;
+  id: number | string;
   name: string;
   contactPerson?: string;
   email: string;
   phone?: string;
   address?: string;
   status?: string;
+  userId?: number;
 };
 
-// Safe string conversion
+/**
+ * Safe string conversion
+ */
 const safeString = (v: any) => {
   if (v === null || v === undefined) return "";
   if (typeof v === "string" || typeof v === "number") return String(v);
   return JSON.stringify(v);
 };
 
-// Normalize API response
+/**
+ * Normalize API response
+ */
 const normalizeCustomer = (c: any): Customer => ({
-  id: c.id,
+  id: c.id ?? c._id,
   name: safeString(c.name),
   contactPerson: safeString(c.contactPerson),
   email: safeString(c.email),
   phone: safeString(c.phone),
   address: safeString(c.address),
   status: safeString(c.status) || "active",
+  userId:
+    typeof c.userId === "number"
+      ? c.userId
+      : c.userId
+      ? Number(c.userId)
+      : undefined,
 });
 
-// Safe wrappers for browser alerts
+/**
+ * Safe browser helpers
+ */
 const safeAlert = (msg: string) => {
   if (typeof window !== "undefined") alert(msg);
 };
@@ -56,20 +72,26 @@ export default function CustomersPage() {
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
 
+  /**
+   * Form state
+   * ✅ EXACTLY matches backend working body
+   */
   const [form, setForm] = useState({
     name: "",
     contactPerson: "",
-    email: "",
     phone: "",
+    email: "",
     address: "",
-    status: "active",
+    userId: 1, // ✅ REQUIRED by backend
   });
 
-  // Fetch customers
+  /**
+   * Fetch customers
+   */
   const fetchCustomers = async () => {
     setLoading(true);
     try {
-      const res = await apiGet("/api/customers", {
+      const res: any = await apiGet("/api/customers", {
         q: query || undefined,
         page,
         perPage,
@@ -90,58 +112,87 @@ export default function CustomersPage() {
   };
 
   useEffect(() => {
-    setReady(true); // prevent prerender issues
+    setReady(true);
   }, []);
 
   useEffect(() => {
     fetchCustomers();
   }, [page, query]);
 
+  /**
+   * Add customer
+   */
   const handleAdd = () => {
     setEditing(null);
     setForm({
       name: "",
       contactPerson: "",
-      email: "",
       phone: "",
+      email: "",
       address: "",
-      status: "active",
+      userId: 1,
     });
     setShowForm(true);
   };
 
+  /**
+   * Edit customer
+   */
   const handleEdit = (c: Customer) => {
     setEditing(c);
     setForm({
       name: c.name,
       contactPerson: c.contactPerson ?? "",
-      email: c.email,
       phone: c.phone ?? "",
+      email: c.email,
       address: c.address ?? "",
-      status: c.status ?? "active",
+      userId: c.userId ?? 1,
     });
     setShowForm(true);
   };
 
+  /**
+   * Delete customer
+   */
   const handleDelete = async (c: Customer) => {
     if (!safeConfirm(`Delete ${c.name}?`)) return;
     await apiDelete(`/api/customers/${c.id}`);
     fetchCustomers();
   };
 
+  /**
+   * Submit form
+   * ✅ Sends EXACT backend body
+   */
   const submit = async (e: any) => {
     e.preventDefault();
     try {
-      if (editing) await apiPut(`/api/customers/${editing.id}`, form);
-      else await apiPost("/api/customers", form);
+      const payload = {
+        name: form.name,
+        contactPerson: form.contactPerson,
+        phone: form.phone,
+        email: form.email,
+        address: form.address,
+        userId: Number(form.userId),
+      };
+
+      if (editing) {
+        await apiPut(`/api/customers/${editing.id}`, payload);
+      } else {
+        await apiPost("/api/customers", payload);
+      }
+
       setShowForm(false);
       fetchCustomers();
-    } catch {
+    } catch (err) {
+      console.error("Save failed:", err);
       safeAlert("Save failed");
     }
   };
 
-  // Filtered list for search
+  /**
+   * Search filtering
+   */
   const visible = useMemo(() => {
     if (!query) return customers;
     const q = query.toLowerCase();
@@ -149,27 +200,24 @@ export default function CustomersPage() {
       (
         c.name +
         " " +
-        c.contactPerson +
+        (c.contactPerson ?? "") +
         " " +
         c.email +
         " " +
-        c.phone +
+        (c.phone ?? "") +
         " " +
-        c.address
+        (c.address ?? "")
       )
         .toLowerCase()
         .includes(q)
     );
   }, [customers, query]);
 
-  // Avoid rendering until ready
   if (!ready) return <div className="p-6 text-center">Loading page...</div>;
 
   return (
     <Protected>
       <div className="space-y-6">
-
-        {/* Top Controls */}
         <TableControls
           title="Customers"
           query={query}
@@ -183,13 +231,12 @@ export default function CustomersPage() {
           totalPages={totalPages}
         />
 
-        {/* Form Section */}
         {showForm && (
           <form
             onSubmit={submit}
-            className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border border-gray-300 dark:border-gray-700"
+            className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border"
           >
-            <h2 className="text-lg font-semibold mb-4 dark:text-gray-200">
+            <h2 className="text-lg font-semibold mb-4">
               {editing ? "Edit Customer" : "Add New Customer"}
             </h2>
 
@@ -197,9 +244,11 @@ export default function CustomersPage() {
               <input
                 required
                 value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, name: e.target.value }))
+                }
                 placeholder="Customer Name"
-                className="px-3 py-2 border rounded w-full dark:bg-gray-700 dark:text-white"
+                className="px-3 py-2 border rounded"
               />
 
               <input
@@ -208,50 +257,46 @@ export default function CustomersPage() {
                   setForm((f) => ({ ...f, contactPerson: e.target.value }))
                 }
                 placeholder="Contact Person"
-                className="px-3 py-2 border rounded w-full dark:bg-gray-700 dark:text-white"
+                className="px-3 py-2 border rounded"
               />
 
               <input
                 required
                 value={form.email}
-                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, email: e.target.value }))
+                }
                 placeholder="Email"
-                className="px-3 py-2 border rounded w-full dark:bg-gray-700 dark:text-white"
+                className="px-3 py-2 border rounded"
               />
 
               <input
                 value={form.phone}
-                onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, phone: e.target.value }))
+                }
                 placeholder="Phone"
-                className="px-3 py-2 border rounded w-full dark:bg-gray-700 dark:text-white"
+                className="px-3 py-2 border rounded"
               />
 
               <input
                 value={form.address}
-                onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, address: e.target.value }))
+                }
                 placeholder="Address"
-                className="px-3 py-2 border rounded w-full dark:bg-gray-700 dark:text-white"
+                className="px-3 py-2 border rounded"
               />
-
-              <select
-                value={form.status}
-                onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))}
-                className="px-3 py-2 border rounded w-full dark:bg-gray-700 dark:text-white"
-              >
-                <option value="active">Active</option>
-                <option value="pending">Pending</option>
-                <option value="suspended">Suspended</option>
-              </select>
             </div>
 
             <div className="flex gap-3 mt-4">
-              <button className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+              <button className="px-4 py-2 bg-blue-600 text-white rounded">
                 Save
               </button>
               <button
                 type="button"
                 onClick={() => setShowForm(false)}
-                className="px-4 py-2 bg-gray-300 dark:bg-gray-700 dark:text-white rounded"
+                className="px-4 py-2 bg-gray-300 rounded"
               >
                 Cancel
               </button>
@@ -259,73 +304,65 @@ export default function CustomersPage() {
           </form>
         )}
 
-        {/* Table Section */}
-        <div className="bg-white dark:bg-gray-800 rounded-lg shadow border border-gray-300 dark:border-gray-700 overflow-x-auto">
-          <table className="min-w-full divide-y divide-gray-300 dark:divide-gray-700">
-            <thead className="bg-gray-100 dark:bg-gray-700">
+        <div className="bg-white rounded-lg shadow border overflow-x-auto">
+          <table className="min-w-full divide-y">
+            <thead className="bg-gray-100">
               <tr>
-                {["ID", "Name", "Contact Person", "Email", "Phone", "Address", "Status", "Actions"].map((h) => (
-                  <th
-                    key={h}
-                    className="px-4 py-3 text-left text-sm font-semibold text-gray-700 dark:text-gray-200 border-b dark:border-gray-600"
-                  >
+                {[
+                  "ID",
+                  "Name",
+                  "Contact Person",
+                  "Email",
+                  "Phone",
+                  "Address",
+                  "Status",
+                  "Actions",
+                ].map((h) => (
+                  <th key={h} className="px-4 py-3 text-left text-sm font-semibold">
                     {h}
                   </th>
                 ))}
               </tr>
             </thead>
 
-            <tbody className="bg-white dark:bg-gray-800">
+            <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="p-6 text-center text-gray-500 dark:text-gray-300">
+                  <td colSpan={8} className="p-6 text-center">
                     Loading...
                   </td>
                 </tr>
               ) : visible.length ? (
                 visible.map((c, i) => (
-                  <tr
-                    key={c.id}
-                    className={`${
-                      i % 2 === 0
-                        ? "bg-white dark:bg-gray-800"
-                        : "bg-gray-50 dark:bg-gray-700"
-                    } hover:bg-gray-100 dark:hover:bg-gray-600 transition`}
-                  >
-                    <td className="px-4 py-3 border-b dark:border-gray-700">{c.id}</td>
-                    <td className="px-4 py-3 border-b dark:border-gray-700">{c.name}</td>
-                    <td className="px-4 py-3 border-b dark:border-gray-700">{c.contactPerson || "-"}</td>
-                    <td className="px-4 py-3 border-b dark:border-gray-700">{c.email}</td>
-                    <td className="px-4 py-3 border-b dark:border-gray-700">{c.phone || "-"}</td>
-                    <td className="px-4 py-3 border-b dark:border-gray-700">{c.address || "-"}</td>
-                    <td className="px-4 py-3 border-b dark:border-gray-700">
-                      <StatusBadge status={c.status || "Unknown"} />
+                  <tr key={String(c.id)} className={i % 2 ? "bg-gray-50" : ""}>
+                    <td className="px-4 py-3">{c.id}</td>
+                    <td className="px-4 py-3">{c.name}</td>
+                    <td className="px-4 py-3">{c.contactPerson || "-"}</td>
+                    <td className="px-4 py-3">{c.email}</td>
+                    <td className="px-4 py-3">{c.phone || "-"}</td>
+                    <td className="px-4 py-3">{c.address || "-"}</td>
+                    <td className="px-4 py-3">
+                      <StatusBadge status={c.status || "active"} />
                     </td>
-                    <td className="px-4 py-3 border-b dark:border-gray-700 flex gap-2">
+                    <td className="px-4 py-3 flex gap-2">
                       <button
                         onClick={() => handleEdit(c)}
-                        className="px-3 py-1 text-sm bg-yellow-400 hover:bg-yellow-500 rounded"
+                        className="px-3 py-1 bg-yellow-400 rounded"
                       >
                         Edit
                       </button>
                       <button
                         onClick={() => handleDelete(c)}
-                        className="px-3 py-1 text-sm bg-red-500 hover:bg-red-600 text-white rounded"
+                        className="px-3 py-1 bg-red-500 text-white rounded"
                       >
                         Delete
-                      </button>
-                      <button
-                        onClick={() => safeAlert(JSON.stringify(c, null, 2))}
-                        className="px-3 py-1 text-sm bg-gray-300 dark:bg-gray-700 dark:text-white rounded"
-                      >
-                        View
                       </button>
                     </td>
                   </tr>
                 ))
               ) : (
                 <tr>
-                  <td colSpan={8} className="p-6 text-center text-gray-500 dark:text-gray-300">
+                  <td colSpan={8} className="p-6 text-center">
                     No customers found
                   </td>
                 </tr>
