@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { ComponentType, PropsWithChildren } from "react";
 import dynamic from "next/dynamic";
 import { useRouter } from "next/navigation";
 
@@ -44,10 +45,22 @@ const Marker = dynamic(() => import("react-leaflet").then((m) => m.Marker), {
 const Popup = dynamic(() => import("react-leaflet").then((m) => m.Popup), {
   ssr: false,
 });
+
+/**
+ * ✅ Fix TS children error for MarkerClusterGroup by typing it explicitly
+ * Some builds export default, others export the module itself—handle both.
+ */
+type ClusterProps = PropsWithChildren<{
+  chunkedLoading?: boolean;
+}>;
+
 const MarkerClusterGroup = dynamic(
-  () => import("@changey/react-leaflet-markercluster"),
+  async () => {
+    const mod = await import("@changey/react-leaflet-markercluster");
+    return (mod.default ?? mod) as ComponentType<ClusterProps>;
+  },
   { ssr: false }
-);
+) as ComponentType<ClusterProps>;
 
 /* ================= HELPERS ================= */
 function isNum(v: unknown): v is number {
@@ -55,7 +68,7 @@ function isNum(v: unknown): v is number {
 }
 
 function hasCoords(t: Tele) {
-  // allow 0,0 coordinates
+  // ✅ allow 0,0 coordinates
   return isNum(t.lat) && isNum(t.lng);
 }
 
@@ -70,6 +83,32 @@ function getTeleKey(t: Tele) {
 function vehicleLabel(v?: Vehicle) {
   if (!v) return "Unknown vehicle";
   return v.registrationNumber || v.plateNumber || v.name || `Vehicle #${v.id}`;
+}
+
+/**
+ * Optional: If your telemetry endpoint returns multiple points per vehicle,
+ * you can show ONLY the latest location per deviceId by setting this to true.
+ */
+const SHOW_LATEST_PER_DEVICE = true;
+
+function pickLatestPerDevice(list: Tele[]) {
+  const map = new Map<string, Tele>();
+  for (const t of list) {
+    const key = getTeleKey(t);
+    if (!key) continue;
+
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, t);
+      continue;
+    }
+
+    // Compare ts if present; otherwise keep the existing
+    const a = existing.ts ? new Date(existing.ts).getTime() : 0;
+    const b = t.ts ? new Date(t.ts).getTime() : 0;
+    if (b >= a) map.set(key, t);
+  }
+  return Array.from(map.values());
 }
 
 /* ================= PAGE ================= */
@@ -118,6 +157,8 @@ export default function TelemetryPage() {
 
   /* ✅ Patch Leaflet default icon (client-only) */
   useEffect(() => {
+    let cancelled = false;
+
     (async () => {
       if (typeof window === "undefined") return;
 
@@ -129,14 +170,18 @@ export default function TelemetryPage() {
         iconUrl: "/leaflet/marker-icon.png",
         shadowUrl: "/leaflet/marker-shadow.png",
       });
+
+      if (cancelled) return;
     })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   /* Fetch vehicles (needed to show vehicle label on map) */
   const fetchVehicles = async () => {
-    // 🔁 Change this if your endpoint is different
     const res = await api.get("/api/vehicles");
-
     const data = res.data;
     const list: Vehicle[] = Array.isArray(data) ? data : (data?.data ?? []);
     setVehicles(list);
@@ -201,11 +246,15 @@ export default function TelemetryPage() {
     return map;
   }, [vehicles]);
 
-  /* Visible telemetry (optional extra client filtering) */
+  /* Visible telemetry (client filter + optional latest-per-device) */
   const visible = useMemo(() => {
-    if (!debouncedQuery) return items;
-    const q = debouncedQuery.toLowerCase();
-    return items.filter((x) => (x.deviceId ?? "").toLowerCase().includes(q));
+    const base = debouncedQuery
+      ? items.filter((x) =>
+          (x.deviceId ?? "").toLowerCase().includes(debouncedQuery.toLowerCase())
+        )
+      : items;
+
+    return SHOW_LATEST_PER_DEVICE ? pickLatestPerDevice(base) : base;
   }, [items, debouncedQuery]);
 
   /* Map center from available points */
@@ -320,12 +369,8 @@ export default function TelemetryPage() {
                       <td className="px-4 py-3">{t.id}</td>
                       <td className="px-4 py-3">{vehicleLabel(v)}</td>
                       <td className="px-4 py-3">{t.deviceId ?? "-"}</td>
-                      <td className="px-4 py-3">
-                        {isNum(t.lat) ? t.lat : "-"}
-                      </td>
-                      <td className="px-4 py-3">
-                        {isNum(t.lng) ? t.lng : "-"}
-                      </td>
+                      <td className="px-4 py-3">{isNum(t.lat) ? t.lat : "-"}</td>
+                      <td className="px-4 py-3">{isNum(t.lng) ? t.lng : "-"}</td>
                       <td className="px-4 py-3">{t.ts ?? "-"}</td>
                     </tr>
                   );
