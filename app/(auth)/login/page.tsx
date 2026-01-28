@@ -19,7 +19,6 @@ export default function LoginPage() {
   const [celebrate, setCelebrate] = useState(false);
   const [success, setSuccess] = useState(false);
 
-  /* 🌙 System theme */
   useEffect(() => {
     const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     document.documentElement.classList.toggle("dark", dark);
@@ -48,15 +47,14 @@ export default function LoginPage() {
       let res: any;
       try {
         res = await tryLogin("/api/auth/login");
-      } catch (err) {
-        const status = (err as any)?.status;
-        if (status === 404) res = await tryLogin("/auth/login");
+      } catch (err: any) {
+        if (err?.status === 404) res = await tryLogin("/auth/login");
         else throw err;
       }
 
       if (!res || !res.token) throw new Error("Invalid login");
 
-      // ✅ LASTING FIX: store token consistently using Remember me
+      // ✅ Remember-me behavior
       if (remember) {
         localStorage.setItem("token", res.token);
         sessionStorage.removeItem("token");
@@ -69,9 +67,7 @@ export default function LoginPage() {
       setCelebrate(true);
       setSuccess(true);
 
-      setTimeout(() => {
-        router.replace("/dashboard");
-      }, 1600);
+      setTimeout(() => router.replace("/dashboard"), 1200);
     } catch (err) {
       playSound("error");
       setErrMsg("Whoops 😅 Invalid email or password");
@@ -101,7 +97,9 @@ export default function LoginPage() {
 
         <form
           onSubmit={handleLogin}
-          className={`glass-card rounded-2xl p-6 sm:p-8 space-y-5 ${shake ? "shake" : ""}`}
+          className={`glass-card rounded-2xl p-6 sm:p-8 space-y-5 ${
+            shake ? "shake" : ""
+          }`}
         >
           {!success ? (
             <>
@@ -221,24 +219,13 @@ export default function LoginPage() {
           top: -10%;
           animation: fall 1.5s linear forwards;
           font-size: 1.5rem;
-          left: calc(100% * var(--i));
         }
         @keyframes fall {
-          to {
-            transform: translateY(120vh) rotate(360deg);
-            opacity: 0;
-          }
+          to { transform: translateY(120vh) rotate(360deg); opacity: 0; }
         }
         .success { text-align: center; }
-        .checkmark {
-          font-size: 3rem;
-          color: #22c55e;
-          animation: pop 0.5s ease-out;
-        }
-        @keyframes pop {
-          0% { transform: scale(0); }
-          100% { transform: scale(1); }
-        }
+        .checkmark { font-size: 3rem; color: #22c55e; animation: pop 0.5s ease-out; }
+        @keyframes pop { 0% { transform: scale(0); } 100% { transform: scale(1); } }
       `}</style>
     </div>
   );

@@ -23,6 +23,16 @@ function getToken(): string {
   }
 }
 
+function clearToken() {
+  try {
+    if (typeof window === "undefined") return;
+    localStorage.removeItem("token");
+    sessionStorage.removeItem("token");
+  } catch {
+    // ignore
+  }
+}
+
 async function request<T = any>(input: string, init?: RequestInit) {
   const url = `${BASE_URL}${input}`;
 
@@ -43,7 +53,7 @@ async function request<T = any>(input: string, init?: RequestInit) {
   const res = await fetch(url, {
     ...init,
     headers,
-    // ✅ For Bearer token APIs across domains, omit credentials
+    // ✅ cross-domain Bearer token API
     credentials: "omit",
   });
 
@@ -68,14 +78,26 @@ async function request<T = any>(input: string, init?: RequestInit) {
 
     err.status = res.status;
     err.raw = data;
-
-    // ✅ Helpful debug for 401/403
     err.debug = {
       url,
+      method: init?.method || "GET",
       hasAuthHeader: headers.has("Authorization"),
       tokenPresent: Boolean(token),
       status: res.status,
     };
+
+    // ✅ LASTING FIX:
+    // 401 = invalid/expired token -> logout
+    // 403 = forbidden -> do NOT logout (keep user logged in)
+    if (typeof window !== "undefined") {
+      if (res.status === 401) {
+        console.warn("AUTH 401 - token invalid/expired", err.debug, err.raw);
+        clearToken();
+        window.location.href = "/login";
+      } else if (res.status === 403) {
+        console.warn("AUTH 403 - forbidden (no logout)", err.debug, err.raw);
+      }
+    }
 
     throw err;
   }
@@ -103,7 +125,8 @@ export const api = {
   post: apiPost,
   put: <T = any>(endpoint: string, data?: any) =>
     request<T>(endpoint, { method: "PUT", body: JSON.stringify(data ?? {}) }),
-  delete: <T = any>(endpoint: string) => request<T>(endpoint, { method: "DELETE" }),
+  delete: <T = any>(endpoint: string) =>
+    request<T>(endpoint, { method: "DELETE" }),
 };
 
 export const apiPut = api.put;
