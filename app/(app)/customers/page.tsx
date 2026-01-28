@@ -7,9 +7,6 @@ import StatusBadge from "@/components/StatusBadge";
 import Protected from "@/components/Protected";
 import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 
-/**
- * Customer type
- */
 type Customer = {
   id: number | string;
   name: string;
@@ -21,18 +18,12 @@ type Customer = {
   userId?: number;
 };
 
-/**
- * Safe string conversion
- */
 const safeString = (v: any) => {
   if (v === null || v === undefined) return "";
   if (typeof v === "string" || typeof v === "number") return String(v);
   return JSON.stringify(v);
 };
 
-/**
- * Normalize API response
- */
 const normalizeCustomer = (c: any): Customer => ({
   id: c.id ?? c._id,
   name: safeString(c.name),
@@ -49,9 +40,6 @@ const normalizeCustomer = (c: any): Customer => ({
       : undefined,
 });
 
-/**
- * Safe browser helpers
- */
 const safeAlert = (msg: string) => {
   if (typeof window !== "undefined") alert(msg);
 };
@@ -61,33 +49,91 @@ const safeConfirm = (msg: string) => {
   return false;
 };
 
+function getStoredToken() {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+}
+
+// ✅ Decode JWT payload (base64url)
+function decodeJwt(token: string) {
+  try {
+    const part = token.split(".")[1];
+    if (!part) return null;
+    const base64 = part.replace(/-/g, "+").replace(/_/g, "/");
+    const json = decodeURIComponent(
+      atob(base64)
+        .split("")
+        .map((c) => "%" + ("00" + c.charCodeAt(0).toString(16)).slice(-2))
+        .join("")
+    );
+    return JSON.parse(json);
+  } catch {
+    return null;
+  }
+}
+
+// ✅ Extract user id from token in a robust way
+function getAuthUserId(): number | null {
+  const token = getStoredToken();
+  if (!token) return null;
+
+  const payload: any = decodeJwt(token);
+  if (!payload) return null;
+
+  // common fields used by APIs
+  const candidate = payload.id ?? payload.userId ?? payload.sub ?? payload.uid;
+  const n = Number(candidate);
+  return Number.isFinite(n) ? n : null;
+}
+
 export default function CustomersPage() {
   const [ready, setReady] = useState(false);
+
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
-  const [perPage] = useState(10);
+  const perPage = 10;
+
   const [totalPages, setTotalPages] = useState(1);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
+
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
 
-  /**
-   * Form state
-   * ✅ EXACTLY matches backend working body
-   */
+  // ✅ userId pulled from token (fixes production 403)
+  const [authUserId, setAuthUserId] = useState<number | null>(null);
+
   const [form, setForm] = useState({
     name: "",
     contactPerson: "",
     phone: "",
     email: "",
     address: "",
-    userId: 1, // ✅ REQUIRED by backend
   });
 
-  /**
-   * Fetch customers
-   */
+  const handleApiError = (err: any, action: string) => {
+    const status = err?.status;
+    const message =
+      err?.message || err?.raw?.message || err?.raw?.error || `${action} failed`;
+
+    if (status === 401) {
+      safeAlert("Session expired. Please login again.");
+      window.location.href = "/login";
+      return;
+    }
+
+    if (status === 403) {
+      console.warn("FORBIDDEN (403):", action, err?.debug, err?.raw);
+      safeAlert(
+        "Access denied (403). This usually means your account is not allowed to create/update customers OR the userId sent does not match your login."
+      );
+      return;
+    }
+
+    console.error(action, err);
+    safeAlert(message);
+  };
+
   const fetchCustomers = async () => {
     setLoading(true);
     try {
@@ -102,26 +148,41 @@ export default function CustomersPage() {
         : (res.data ?? res.items ?? []).map(normalizeCustomer);
 
       setCustomers(list);
-      setTotalPages(res.totalPages ?? 1);
-    } catch (err) {
-      console.error("Error fetching customers:", err);
+      setTotalPages(res?.totalPages ?? 1);
+    } catch (err: any) {
+      handleApiError(err, "Fetch customers");
       setCustomers([]);
       setTotalPages(1);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
     setReady(true);
+
+    // ✅ compute auth user id once on client
+    const token = getStoredToken();
+    if (!token) {
+      window.location.href = "/login";
+      return;
+    }
+
+    const uid = getAuthUserId();
+    if (!uid) {
+      // Token exists but doesn't contain user id (or decode failed)
+      console.warn("Token found but user id missing in JWT payload.");
+      // still allow view, but creating/updating may fail
+    }
+    setAuthUserId(uid);
   }, []);
 
   useEffect(() => {
+    if (!ready) return;
     fetchCustomers();
-  }, [page, query]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, page, query]);
 
-  /**
-   * Add customer
-   */
   const handleAdd = () => {
     setEditing(null);
     setForm({
@@ -130,14 +191,10 @@ export default function CustomersPage() {
       phone: "",
       email: "",
       address: "",
-      userId: 1,
     });
     setShowForm(true);
   };
 
-  /**
-   * Edit customer
-   */
   const handleEdit = (c: Customer) => {
     setEditing(c);
     setForm({
@@ -146,35 +203,48 @@ export default function CustomersPage() {
       phone: c.phone ?? "",
       email: c.email,
       address: c.address ?? "",
-      userId: c.userId ?? 1,
     });
     setShowForm(true);
   };
 
-  /**
-   * Delete customer
-   */
   const handleDelete = async (c: Customer) => {
     if (!safeConfirm(`Delete ${c.name}?`)) return;
-    await apiDelete(`/api/customers/${c.id}`);
-    fetchCustomers();
+
+    try {
+      await apiDelete(`/api/customers/${c.id}`);
+      fetchCustomers();
+    } catch (err: any) {
+      handleApiError(err, "Delete customer");
+    }
   };
 
-  /**
-   * Submit form
-   * ✅ Sends EXACT backend body
-   */
   const submit = async (e: any) => {
     e.preventDefault();
+
     try {
+      const uid = authUserId;
+
+      // ✅ If backend requires userId, send the logged-in user's id
+      if (!uid) {
+        safeAlert(
+          "Cannot determine your userId from token. Please login again, then retry."
+        );
+        return;
+      }
+
       const payload = {
-        name: form.name,
-        contactPerson: form.contactPerson,
-        phone: form.phone,
-        email: form.email,
-        address: form.address,
-        userId: Number(form.userId),
+        name: form.name.trim(),
+        contactPerson: form.contactPerson.trim(),
+        phone: form.phone.trim(),
+        email: form.email.trim(),
+        address: form.address.trim(),
+        userId: uid, // ✅ FIX: no more hardcoded 1
       };
+
+      if (!payload.name || !payload.email) {
+        safeAlert("Name and Email are required");
+        return;
+      }
 
       if (editing) {
         await apiPut(`/api/customers/${editing.id}`, payload);
@@ -184,15 +254,11 @@ export default function CustomersPage() {
 
       setShowForm(false);
       fetchCustomers();
-    } catch (err) {
-      console.error("Save failed:", err);
-      safeAlert("Save failed");
+    } catch (err: any) {
+      handleApiError(err, editing ? "Update customer" : "Create customer");
     }
   };
 
-  /**
-   * Search filtering
-   */
   const visible = useMemo(() => {
     if (!query) return customers;
     const q = query.toLowerCase();
@@ -318,7 +384,10 @@ export default function CustomersPage() {
                   "Status",
                   "Actions",
                 ].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-sm font-semibold">
+                  <th
+                    key={h}
+                    className="px-4 py-3 text-left text-sm font-semibold"
+                  >
                     {h}
                   </th>
                 ))}
