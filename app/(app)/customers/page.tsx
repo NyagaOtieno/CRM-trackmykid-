@@ -7,6 +7,9 @@ import StatusBadge from "@/components/StatusBadge";
 import Protected from "@/components/Protected";
 import { apiGet, apiPost, apiPut, apiDelete } from "@/lib/api";
 
+/**
+ * Customer type
+ */
 type Customer = {
   id: number | string;
   name: string;
@@ -18,12 +21,18 @@ type Customer = {
   userId?: number;
 };
 
+/**
+ * Safe string conversion
+ */
 const safeString = (v: any) => {
   if (v === null || v === undefined) return "";
   if (typeof v === "string" || typeof v === "number") return String(v);
   return JSON.stringify(v);
 };
 
+/**
+ * Normalize API response
+ */
 const normalizeCustomer = (c: any): Customer => ({
   id: c.id ?? c._id,
   name: safeString(c.name),
@@ -40,6 +49,9 @@ const normalizeCustomer = (c: any): Customer => ({
       : undefined,
 });
 
+/**
+ * Safe browser helpers
+ */
 const safeAlert = (msg: string) => {
   if (typeof window !== "undefined") alert(msg);
 };
@@ -49,59 +61,33 @@ const safeConfirm = (msg: string) => {
   return false;
 };
 
-function getStoredToken() {
-  if (typeof window === "undefined") return "";
-  return localStorage.getItem("token") || sessionStorage.getItem("token") || "";
-}
-
 export default function CustomersPage() {
   const [ready, setReady] = useState(false);
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
-  const perPage = 10;
-
+  const [perPage] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
-
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
 
+  /**
+   * Form state
+   * ✅ EXACTLY matches backend working body
+   */
   const [form, setForm] = useState({
     name: "",
     contactPerson: "",
     phone: "",
     email: "",
     address: "",
-    userId: 1, // keep if backend requires
+    userId: 1, // ✅ REQUIRED by backend
   });
 
-  const handleApiError = (err: any, action: string) => {
-    const status = err?.status;
-    const message =
-      err?.message ||
-      err?.raw?.message ||
-      err?.raw?.error ||
-      `${action} failed`;
-
-    // ✅ 401 => login again
-    if (status === 401) {
-      safeAlert("Session expired. Please login again.");
-      window.location.href = "/login";
-      return;
-    }
-
-    // ✅ 403 => forbidden, DO NOT LOGOUT
-    if (status === 403) {
-      console.warn("FORBIDDEN:", action, err?.debug, err?.raw);
-      safeAlert("Access denied (403). Your account is not allowed to do this action.");
-      return;
-    }
-
-    console.error(action, err);
-    safeAlert(message);
-  };
-
+  /**
+   * Fetch customers
+   */
   const fetchCustomers = async () => {
     setLoading(true);
     try {
@@ -116,32 +102,26 @@ export default function CustomersPage() {
         : (res.data ?? res.items ?? []).map(normalizeCustomer);
 
       setCustomers(list);
-      setTotalPages(res?.totalPages ?? 1);
-    } catch (err: any) {
-      handleApiError(err, "Fetch customers");
+      setTotalPages(res.totalPages ?? 1);
+    } catch (err) {
+      console.error("Error fetching customers:", err);
       setCustomers([]);
       setTotalPages(1);
-    } finally {
-      setLoading(false);
     }
+    setLoading(false);
   };
 
-  useEffect(() => setReady(true), []);
+  useEffect(() => {
+    setReady(true);
+  }, []);
 
   useEffect(() => {
-    if (!ready) return;
-
-    // if no token, go login
-    const token = getStoredToken();
-    if (!token) {
-      window.location.href = "/login";
-      return;
-    }
-
     fetchCustomers();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ready, page, query]);
+  }, [page, query]);
 
+  /**
+   * Add customer
+   */
   const handleAdd = () => {
     setEditing(null);
     setForm({
@@ -155,6 +135,9 @@ export default function CustomersPage() {
     setShowForm(true);
   };
 
+  /**
+   * Edit customer
+   */
   const handleEdit = (c: Customer) => {
     setEditing(c);
     setForm({
@@ -168,20 +151,21 @@ export default function CustomersPage() {
     setShowForm(true);
   };
 
+  /**
+   * Delete customer
+   */
   const handleDelete = async (c: Customer) => {
     if (!safeConfirm(`Delete ${c.name}?`)) return;
-
-    try {
-      await apiDelete(`/api/customers/${c.id}`);
-      fetchCustomers();
-    } catch (err: any) {
-      handleApiError(err, "Delete customer");
-    }
+    await apiDelete(`/api/customers/${c.id}`);
+    fetchCustomers();
   };
 
+  /**
+   * Submit form
+   * ✅ Sends EXACT backend body
+   */
   const submit = async (e: any) => {
     e.preventDefault();
-
     try {
       const payload = {
         name: form.name,
@@ -200,11 +184,15 @@ export default function CustomersPage() {
 
       setShowForm(false);
       fetchCustomers();
-    } catch (err: any) {
-      handleApiError(err, editing ? "Update customer" : "Create customer");
+    } catch (err) {
+      console.error("Save failed:", err);
+      safeAlert("Save failed");
     }
   };
 
+  /**
+   * Search filtering
+   */
   const visible = useMemo(() => {
     if (!query) return customers;
     const q = query.toLowerCase();
@@ -244,7 +232,10 @@ export default function CustomersPage() {
         />
 
         {showForm && (
-          <form onSubmit={submit} className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border">
+          <form
+            onSubmit={submit}
+            className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow border"
+          >
             <h2 className="text-lg font-semibold mb-4">
               {editing ? "Edit Customer" : "Add New Customer"}
             </h2>
@@ -253,14 +244,18 @@ export default function CustomersPage() {
               <input
                 required
                 value={form.name}
-                onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, name: e.target.value }))
+                }
                 placeholder="Customer Name"
                 className="px-3 py-2 border rounded"
               />
 
               <input
                 value={form.contactPerson}
-                onChange={(e) => setForm((f) => ({ ...f, contactPerson: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, contactPerson: e.target.value }))
+                }
                 placeholder="Contact Person"
                 className="px-3 py-2 border rounded"
               />
@@ -268,28 +263,36 @@ export default function CustomersPage() {
               <input
                 required
                 value={form.email}
-                onChange={(e) => setForm((f) => ({ ...f, email: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, email: e.target.value }))
+                }
                 placeholder="Email"
                 className="px-3 py-2 border rounded"
               />
 
               <input
                 value={form.phone}
-                onChange={(e) => setForm((f) => ({ ...f, phone: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, phone: e.target.value }))
+                }
                 placeholder="Phone"
                 className="px-3 py-2 border rounded"
               />
 
               <input
                 value={form.address}
-                onChange={(e) => setForm((f) => ({ ...f, address: e.target.value }))}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, address: e.target.value }))
+                }
                 placeholder="Address"
                 className="px-3 py-2 border rounded"
               />
             </div>
 
             <div className="flex gap-3 mt-4">
-              <button className="px-4 py-2 bg-blue-600 text-white rounded">Save</button>
+              <button className="px-4 py-2 bg-blue-600 text-white rounded">
+                Save
+              </button>
               <button
                 type="button"
                 onClick={() => setShowForm(false)}
@@ -305,15 +308,30 @@ export default function CustomersPage() {
           <table className="min-w-full divide-y">
             <thead className="bg-gray-100">
               <tr>
-                {["ID","Name","Contact Person","Email","Phone","Address","Status","Actions"].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-sm font-semibold">{h}</th>
+                {[
+                  "ID",
+                  "Name",
+                  "Contact Person",
+                  "Email",
+                  "Phone",
+                  "Address",
+                  "Status",
+                  "Actions",
+                ].map((h) => (
+                  <th key={h} className="px-4 py-3 text-left text-sm font-semibold">
+                    {h}
+                  </th>
                 ))}
               </tr>
             </thead>
 
             <tbody>
               {loading ? (
-                <tr><td colSpan={8} className="p-6 text-center">Loading...</td></tr>
+                <tr>
+                  <td colSpan={8} className="p-6 text-center">
+                    Loading...
+                  </td>
+                </tr>
               ) : visible.length ? (
                 visible.map((c, i) => (
                   <tr key={String(c.id)} className={i % 2 ? "bg-gray-50" : ""}>
@@ -327,17 +345,27 @@ export default function CustomersPage() {
                       <StatusBadge status={c.status || "active"} />
                     </td>
                     <td className="px-4 py-3 flex gap-2">
-                      <button onClick={() => handleEdit(c)} className="px-3 py-1 bg-yellow-400 rounded">
+                      <button
+                        onClick={() => handleEdit(c)}
+                        className="px-3 py-1 bg-yellow-400 rounded"
+                      >
                         Edit
                       </button>
-                      <button onClick={() => handleDelete(c)} className="px-3 py-1 bg-red-500 text-white rounded">
+                      <button
+                        onClick={() => handleDelete(c)}
+                        className="px-3 py-1 bg-red-500 text-white rounded"
+                      >
                         Delete
                       </button>
                     </td>
                   </tr>
                 ))
               ) : (
-                <tr><td colSpan={8} className="p-6 text-center">No customers found</td></tr>
+                <tr>
+                  <td colSpan={8} className="p-6 text-center">
+                    No customers found
+                  </td>
+                </tr>
               )}
             </tbody>
           </table>

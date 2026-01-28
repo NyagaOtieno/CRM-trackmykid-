@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { apiPost } from "@/lib/api";
 
+
 export default function LoginPage() {
   const router = useRouter();
 
@@ -19,6 +20,7 @@ export default function LoginPage() {
   const [celebrate, setCelebrate] = useState(false);
   const [success, setSuccess] = useState(false);
 
+  /* 🌙 System theme */
   useEffect(() => {
     const dark = window.matchMedia("(prefers-color-scheme: dark)").matches;
     document.documentElement.classList.toggle("dark", dark);
@@ -44,30 +46,28 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      let res: any;
+      let res;
       try {
         res = await tryLogin("/api/auth/login");
-      } catch (err: any) {
-        if (err?.status === 404) res = await tryLogin("/auth/login");
+      } catch (err) {
+        const status = (err as any)?.status;
+        if (status === 404) res = await tryLogin("/auth/login");
         else throw err;
       }
 
       if (!res || !res.token) throw new Error("Invalid login");
 
-      // ✅ Remember-me behavior
-      if (remember) {
-        localStorage.setItem("token", res.token);
-        sessionStorage.removeItem("token");
-      } else {
-        sessionStorage.setItem("token", res.token);
-        localStorage.removeItem("token");
-      }
+    // In your login file
+localStorage.setItem("token", res.token);
+
 
       playSound("success");
       setCelebrate(true);
       setSuccess(true);
 
-      setTimeout(() => router.replace("/dashboard"), 1200);
+      setTimeout(() => {
+        router.replace("/dashboard");
+      }, 1600);
     } catch (err) {
       playSound("error");
       setErrMsg("Whoops 😅 Invalid email or password");
@@ -80,6 +80,7 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 px-4 overflow-hidden">
+      {/* 🎉 Celebration */}
       {celebrate && (
         <div className="celebration">
           {Array.from({ length: 25 }).map((_, i) => (
@@ -89,12 +90,14 @@ export default function LoginPage() {
       )}
 
       <div className="w-full max-w-md animate-fade-in">
+        {/* Logo */}
         <div className="flex justify-center mb-6">
           <div className="bg-white/80 backdrop-blur rounded-2xl p-4 shadow-lg">
             <Image src="/logo.png" alt="TrackMyKid CRM" width={64} height={64} />
           </div>
         </div>
 
+        {/* Card */}
         <form
           onSubmit={handleLogin}
           className={`glass-card rounded-2xl p-6 sm:p-8 space-y-5 ${
@@ -107,7 +110,9 @@ export default function LoginPage() {
                 Sign in to your account
               </h2>
 
-              <p className="text-sm text-center text-blue-100">Welcome back 👋</p>
+              <p className="text-sm text-center text-blue-100">
+                Welcome back 👋
+              </p>
 
               {errMsg && (
                 <div className="rounded-lg bg-red-500/20 border border-red-400 text-red-100 px-4 py-2 text-sm">
@@ -133,6 +138,7 @@ export default function LoginPage() {
                 className="input"
               />
 
+              {/* Remember me */}
               <label className="flex items-center gap-2 text-sm text-blue-100">
                 <input
                   type="checkbox"
@@ -143,16 +149,24 @@ export default function LoginPage() {
               </label>
 
               <div className="flex justify-end">
-                <a href="/forgot-password" className="text-sm text-blue-200 hover:underline">
+                <a
+                  href="/forgot-password"
+                  className="text-sm text-blue-200 hover:underline"
+                >
                   Forgot password?
                 </a>
               </div>
 
-              <button type="submit" disabled={loading} className="login-btn">
+              <button
+                type="submit"
+                disabled={loading}
+                className="login-btn"
+              >
                 {loading ? "Signing in..." : "Sign In"}
               </button>
             </>
           ) : (
+            /* ✅ Success animation */
             <div className="success">
               <div className="checkmark">✓</div>
               <p className="text-blue-100 mt-3">Login successful!</p>
@@ -165,6 +179,7 @@ export default function LoginPage() {
         </p>
       </div>
 
+      {/* 🎨 Styles */}
       <style jsx>{`
         .glass-card {
           background: rgba(255, 255, 255, 0.12);
@@ -172,6 +187,7 @@ export default function LoginPage() {
           border: 1px solid rgba(255, 255, 255, 0.25);
           box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
         }
+
         .input {
           width: 100%;
           padding: 0.65rem 1rem;
@@ -179,6 +195,7 @@ export default function LoginPage() {
           background: rgba(255, 255, 255, 0.9);
           outline: none;
         }
+
         .login-btn {
           width: 100%;
           padding: 0.7rem;
@@ -189,6 +206,7 @@ export default function LoginPage() {
           position: relative;
           overflow: hidden;
         }
+
         .login-btn::after {
           content: "";
           position: absolute;
@@ -197,35 +215,58 @@ export default function LoginPage() {
           opacity: 0;
           transition: opacity 0.2s;
         }
+
         .login-btn:active::after {
           opacity: 1;
         }
+
         .shake {
           animation: shake 0.4s;
         }
+
         @keyframes shake {
           25% { transform: translateX(-6px); }
           75% { transform: translateX(6px); }
         }
+
         .animate-fade-in {
           animation: fadeIn 0.6s ease-out both;
         }
+
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(12px); }
           to { opacity: 1; transform: translateY(0); }
         }
+
         .celebration span {
           position: fixed;
           top: -10%;
           animation: fall 1.5s linear forwards;
           font-size: 1.5rem;
+          left: calc(100% * var(--i));
         }
+
         @keyframes fall {
-          to { transform: translateY(120vh) rotate(360deg); opacity: 0; }
+          to {
+            transform: translateY(120vh) rotate(360deg);
+            opacity: 0;
+          }
         }
-        .success { text-align: center; }
-        .checkmark { font-size: 3rem; color: #22c55e; animation: pop 0.5s ease-out; }
-        @keyframes pop { 0% { transform: scale(0); } 100% { transform: scale(1); } }
+
+        .success {
+          text-align: center;
+        }
+
+        .checkmark {
+          font-size: 3rem;
+          color: #22c55e;
+          animation: pop 0.5s ease-out;
+        }
+
+        @keyframes pop {
+          0% { transform: scale(0); }
+          100% { transform: scale(1); }
+        }
       `}</style>
     </div>
   );
