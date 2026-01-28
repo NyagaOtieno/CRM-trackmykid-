@@ -6,7 +6,6 @@ import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { apiPost } from "@/lib/api";
 
-
 export default function LoginPage() {
   const router = useRouter();
 
@@ -46,7 +45,7 @@ export default function LoginPage() {
     setLoading(true);
 
     try {
-      let res;
+      let res: any;
       try {
         res = await tryLogin("/api/auth/login");
       } catch (err) {
@@ -57,9 +56,14 @@ export default function LoginPage() {
 
       if (!res || !res.token) throw new Error("Invalid login");
 
-    // In your login file
-localStorage.setItem("token", res.token);
-
+      // ✅ LASTING FIX: store token consistently using Remember me
+      if (remember) {
+        localStorage.setItem("token", res.token);
+        sessionStorage.removeItem("token");
+      } else {
+        sessionStorage.setItem("token", res.token);
+        localStorage.removeItem("token");
+      }
 
       playSound("success");
       setCelebrate(true);
@@ -80,7 +84,6 @@ localStorage.setItem("token", res.token);
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 px-4 overflow-hidden">
-      {/* 🎉 Celebration */}
       {celebrate && (
         <div className="celebration">
           {Array.from({ length: 25 }).map((_, i) => (
@@ -90,19 +93,15 @@ localStorage.setItem("token", res.token);
       )}
 
       <div className="w-full max-w-md animate-fade-in">
-        {/* Logo */}
         <div className="flex justify-center mb-6">
           <div className="bg-white/80 backdrop-blur rounded-2xl p-4 shadow-lg">
             <Image src="/logo.png" alt="TrackMyKid CRM" width={64} height={64} />
           </div>
         </div>
 
-        {/* Card */}
         <form
           onSubmit={handleLogin}
-          className={`glass-card rounded-2xl p-6 sm:p-8 space-y-5 ${
-            shake ? "shake" : ""
-          }`}
+          className={`glass-card rounded-2xl p-6 sm:p-8 space-y-5 ${shake ? "shake" : ""}`}
         >
           {!success ? (
             <>
@@ -110,9 +109,7 @@ localStorage.setItem("token", res.token);
                 Sign in to your account
               </h2>
 
-              <p className="text-sm text-center text-blue-100">
-                Welcome back 👋
-              </p>
+              <p className="text-sm text-center text-blue-100">Welcome back 👋</p>
 
               {errMsg && (
                 <div className="rounded-lg bg-red-500/20 border border-red-400 text-red-100 px-4 py-2 text-sm">
@@ -138,7 +135,6 @@ localStorage.setItem("token", res.token);
                 className="input"
               />
 
-              {/* Remember me */}
               <label className="flex items-center gap-2 text-sm text-blue-100">
                 <input
                   type="checkbox"
@@ -149,24 +145,16 @@ localStorage.setItem("token", res.token);
               </label>
 
               <div className="flex justify-end">
-                <a
-                  href="/forgot-password"
-                  className="text-sm text-blue-200 hover:underline"
-                >
+                <a href="/forgot-password" className="text-sm text-blue-200 hover:underline">
                   Forgot password?
                 </a>
               </div>
 
-              <button
-                type="submit"
-                disabled={loading}
-                className="login-btn"
-              >
+              <button type="submit" disabled={loading} className="login-btn">
                 {loading ? "Signing in..." : "Sign In"}
               </button>
             </>
           ) : (
-            /* ✅ Success animation */
             <div className="success">
               <div className="checkmark">✓</div>
               <p className="text-blue-100 mt-3">Login successful!</p>
@@ -179,7 +167,6 @@ localStorage.setItem("token", res.token);
         </p>
       </div>
 
-      {/* 🎨 Styles */}
       <style jsx>{`
         .glass-card {
           background: rgba(255, 255, 255, 0.12);
@@ -187,7 +174,6 @@ localStorage.setItem("token", res.token);
           border: 1px solid rgba(255, 255, 255, 0.25);
           box-shadow: 0 25px 50px rgba(0, 0, 0, 0.25);
         }
-
         .input {
           width: 100%;
           padding: 0.65rem 1rem;
@@ -195,7 +181,6 @@ localStorage.setItem("token", res.token);
           background: rgba(255, 255, 255, 0.9);
           outline: none;
         }
-
         .login-btn {
           width: 100%;
           padding: 0.7rem;
@@ -206,7 +191,6 @@ localStorage.setItem("token", res.token);
           position: relative;
           overflow: hidden;
         }
-
         .login-btn::after {
           content: "";
           position: absolute;
@@ -215,29 +199,23 @@ localStorage.setItem("token", res.token);
           opacity: 0;
           transition: opacity 0.2s;
         }
-
         .login-btn:active::after {
           opacity: 1;
         }
-
         .shake {
           animation: shake 0.4s;
         }
-
         @keyframes shake {
           25% { transform: translateX(-6px); }
           75% { transform: translateX(6px); }
         }
-
         .animate-fade-in {
           animation: fadeIn 0.6s ease-out both;
         }
-
         @keyframes fadeIn {
           from { opacity: 0; transform: translateY(12px); }
           to { opacity: 1; transform: translateY(0); }
         }
-
         .celebration span {
           position: fixed;
           top: -10%;
@@ -245,24 +223,18 @@ localStorage.setItem("token", res.token);
           font-size: 1.5rem;
           left: calc(100% * var(--i));
         }
-
         @keyframes fall {
           to {
             transform: translateY(120vh) rotate(360deg);
             opacity: 0;
           }
         }
-
-        .success {
-          text-align: center;
-        }
-
+        .success { text-align: center; }
         .checkmark {
           font-size: 3rem;
           color: #22c55e;
           animation: pop 0.5s ease-out;
         }
-
         @keyframes pop {
           0% { transform: scale(0); }
           100% { transform: scale(1); }
