@@ -61,20 +61,34 @@ const safeConfirm = (msg: string) => {
   return false;
 };
 
+function getStoredToken() {
+  if (typeof window === "undefined") return "";
+  return localStorage.getItem("token") || sessionStorage.getItem("token") || "";
+}
+
+function clearStoredToken() {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem("token");
+  sessionStorage.removeItem("token");
+}
+
 export default function CustomersPage() {
   const [ready, setReady] = useState(false);
+
   const [query, setQuery] = useState("");
   const [page, setPage] = useState(1);
-  const [perPage] = useState(10);
+  const perPage = 10;
+
   const [totalPages, setTotalPages] = useState(1);
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [loading, setLoading] = useState(false);
+
   const [showForm, setShowForm] = useState(false);
   const [editing, setEditing] = useState<Customer | null>(null);
 
   /**
    * Form state
-   * ✅ EXACTLY matches backend working body
+   * ✅ matches backend body
    */
   const [form, setForm] = useState({
     name: "",
@@ -82,8 +96,43 @@ export default function CustomersPage() {
     phone: "",
     email: "",
     address: "",
-    userId: 1, // ✅ REQUIRED by backend
   });
+
+  /**
+   * Centralized auth-aware error handler
+   */
+  const handleApiError = (err: any, action: string) => {
+    const status = err?.status;
+    const message =
+      err?.message ||
+      err?.raw?.message ||
+      err?.raw?.error ||
+      `${action} failed`;
+
+    // ✅ Always log helpful debug in production
+    if (status === 401 || status === 403) {
+      console.warn("AUTH ERROR:", {
+        action,
+        status,
+        message,
+        debug: err?.debug,
+        raw: err?.raw,
+      });
+
+      // If token is missing or blocked, force re-login (lasting fix)
+      clearStoredToken();
+      safeAlert(
+        status === 403
+          ? "Access denied (403). Please login again or use an account allowed to manage customers."
+          : "Session expired (401). Please login again."
+      );
+      window.location.href = "/login";
+      return;
+    }
+
+    console.error(`${action} failed:`, err);
+    safeAlert(message);
+  };
 
   /**
    * Fetch customers
@@ -102,22 +151,35 @@ export default function CustomersPage() {
         : (res.data ?? res.items ?? []).map(normalizeCustomer);
 
       setCustomers(list);
-      setTotalPages(res.totalPages ?? 1);
-    } catch (err) {
-      console.error("Error fetching customers:", err);
+      setTotalPages(res?.totalPages ?? 1);
+    } catch (err: any) {
+      // For GET, still handle 401/403 properly
+      handleApiError(err, "Fetch customers");
       setCustomers([]);
       setTotalPages(1);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   useEffect(() => {
+    // ✅ only mark ready on client
     setReady(true);
   }, []);
 
   useEffect(() => {
+    if (!ready) return;
+
+    // ✅ if token missing, redirect early (avoid 403 loops)
+    const token = getStoredToken();
+    if (!token) {
+      window.location.href = "/login";
+      return;
+    }
+
     fetchCustomers();
-  }, [page, query]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, page, query]);
 
   /**
    * Add customer
@@ -130,7 +192,6 @@ export default function CustomersPage() {
       phone: "",
       email: "",
       address: "",
-      userId: 1,
     });
     setShowForm(true);
   };
@@ -146,7 +207,6 @@ export default function CustomersPage() {
       phone: c.phone ?? "",
       email: c.email,
       address: c.address ?? "",
-      userId: c.userId ?? 1,
     });
     setShowForm(true);
   };
@@ -156,25 +216,40 @@ export default function CustomersPage() {
    */
   const handleDelete = async (c: Customer) => {
     if (!safeConfirm(`Delete ${c.name}?`)) return;
-    await apiDelete(`/api/customers/${c.id}`);
-    fetchCustomers();
+
+    try {
+      await apiDelete(`/api/customers/${c.id}`);
+      fetchCustomers();
+    } catch (err: any) {
+      handleApiError(err, "Delete customer");
+    }
   };
 
   /**
    * Submit form
-   * ✅ Sends EXACT backend body
+   * ✅ sends backend expected body
+   *
+   * NOTE: your backend requires userId; without changing backend,
+   * we send userId=1 as before. If backend later changes to get userId from token,
+   * remove userId from payload.
    */
   const submit = async (e: any) => {
     e.preventDefault();
+
     try {
       const payload = {
-        name: form.name,
-        contactPerson: form.contactPerson,
-        phone: form.phone,
-        email: form.email,
-        address: form.address,
-        userId: Number(form.userId),
+        name: form.name.trim(),
+        contactPerson: form.contactPerson.trim(),
+        phone: form.phone.trim(),
+        email: form.email.trim(),
+        address: form.address.trim(),
+        userId: 1, // ✅ keep as required by backend
       };
+
+      if (!payload.name || !payload.email) {
+        safeAlert("Name and Email are required");
+        return;
+      }
 
       if (editing) {
         await apiPut(`/api/customers/${editing.id}`, payload);
@@ -184,9 +259,8 @@ export default function CustomersPage() {
 
       setShowForm(false);
       fetchCustomers();
-    } catch (err) {
-      console.error("Save failed:", err);
-      safeAlert("Save failed");
+    } catch (err: any) {
+      handleApiError(err, editing ? "Update customer" : "Create customer");
     }
   };
 
@@ -196,6 +270,7 @@ export default function CustomersPage() {
   const visible = useMemo(() => {
     if (!query) return customers;
     const q = query.toLowerCase();
+
     return customers.filter((c) =>
       (
         c.name +
@@ -318,7 +393,10 @@ export default function CustomersPage() {
                   "Status",
                   "Actions",
                 ].map((h) => (
-                  <th key={h} className="px-4 py-3 text-left text-sm font-semibold">
+                  <th
+                    key={h}
+                    className="px-4 py-3 text-left text-sm font-semibold"
+                  >
                     {h}
                   </th>
                 ))}
